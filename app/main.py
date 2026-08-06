@@ -1,10 +1,20 @@
 """Action layer for the triage agent, gated by identity/permission checks."""
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 
 from app.enforcement import require_permission
+from app.policy import policy_store
+from app.tokens import mint_token
 
 app = FastAPI(title="aiops-triage-agent")
+
+
+@app.post("/auth/session")
+def create_session_token(identity: str):
+    """Mint a short-lived, scoped token for one triage session."""
+    if identity not in policy_store.roles:
+        raise HTTPException(status_code=404, detail=f"unknown identity '{identity}'")
+    return {"access_token": mint_token(identity), "token_type": "bearer"}
 
 
 @app.get("/alerts/{alert_id}")

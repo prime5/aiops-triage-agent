@@ -6,8 +6,13 @@ from fastapi.testclient import TestClient
 from app.audit import audit_logger
 from app.main import app
 from app.policy import policy_store
+from app.tokens import mint_token
 
 client = TestClient(app)
+
+
+def bearer(identity: str) -> dict:
+    return {"Authorization": f"Bearer {mint_token(identity)}"}
 
 
 def test_readonly_identity_can_read_alert():
@@ -25,7 +30,7 @@ def test_unknown_identity_has_no_permissions():
 def test_remediator_can_trigger_runbook_endpoint():
     resp = client.post(
         "/runbooks/restart-service/trigger",
-        headers={"X-Agent-Identity": "triage-agent-remediator"},
+        headers=bearer("triage-agent-remediator"),
     )
     assert resp.status_code == 200
     assert resp.json()["triggered_by"] == "triage-agent-remediator"
@@ -35,7 +40,7 @@ def test_overreach_readonly_agent_denied_trigger_runbook(caplog):
     """Demo scenario: a read-only agent tries to trigger remediation and is denied + logged."""
     resp = client.post(
         "/runbooks/restart-service/trigger",
-        headers={"X-Agent-Identity": "triage-agent-readonly"},
+        headers=bearer("triage-agent-readonly"),
     )
     assert resp.status_code == 403
     assert "not permitted" in resp.json()["detail"]
