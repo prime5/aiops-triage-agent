@@ -1,0 +1,30 @@
+# Identity -> allowed actions. Action-level scoping only for this pass;
+# resource-level scoping (specific channels/runbooks) is a later iteration.
+
+roles:
+  triage-agent-readonly:
+    permissions:
+      - read_alert
+      - read_runbook
+
+  triage-agent-notifier:
+    permissions:
+      - read_alert
+      - read_runbook
+      - post_slack_message
+
+  triage-agent-remediator:
+    permissions:
+      - read_alert
+      - read_runbook
+      - post_slack_message
+      - trigger_runbook
+      - escalate_pagerduty
+
+  triage-agent-admin:
+    permissions:
+      - read_alert
+      - read_runbook
+      - post_slack_message
+      - trigger_runbook
+      - escalate_pagerduty
