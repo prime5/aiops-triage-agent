@@ -1,12 +1,24 @@
 """Action layer for the triage agent, gated by identity/permission checks."""
 
-from fastapi import Depends, FastAPI, HTTPException
+import os
 
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.audit import get_recent_audit_records
 from app.enforcement import require_permission
 from app.policy import policy_store
 from app.tokens import mint_token
 
 app = FastAPI(title="aiops-triage-agent")
+
+_dev_origin = os.environ.get("TRIAGE_UI_ORIGIN", "http://localhost:5173")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[_dev_origin],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/auth/session")
@@ -15,6 +27,16 @@ def create_session_token(identity: str):
     if identity not in policy_store.roles:
         raise HTTPException(status_code=404, detail=f"unknown identity '{identity}'")
     return {"access_token": mint_token(identity), "token_type": "bearer"}
+
+
+@app.get("/policy/roles")
+def list_roles():
+    return {role: sorted(perms) for role, perms in policy_store.roles.items()}
+
+
+@app.get("/audit")
+def list_audit_records(limit: int = 200):
+    return get_recent_audit_records(limit=limit)
 
 
 @app.get("/alerts/{alert_id}")
