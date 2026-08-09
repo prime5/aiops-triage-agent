@@ -17,6 +17,7 @@ const sessionSlice = createSlice({
   initialState,
   reducers: {
     identityChanged(state, action: PayloadAction<string>) {
+      if (action.payload === state.identity) return;
       state.identity = action.payload;
       // switching identity invalidates any previously minted token
       state.token = null;

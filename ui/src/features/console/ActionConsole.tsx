@@ -15,6 +15,7 @@ export function ActionConsole() {
   const [actionName, setActionName] = useState(ACTION_DEFS[0].action);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [result, setResult] = useState<AttemptResult | null>(null);
+  const [attemptError, setAttemptError] = useState<string | null>(null);
 
   const identities = useMemo(() => Object.keys(roles ?? {}), [roles]);
   const actionDef = useMemo(
@@ -37,15 +38,23 @@ export function ActionConsole() {
   useEffect(() => {
     setFieldValues({});
     setResult(null);
+    setAttemptError(null);
   }, [actionName]);
 
   const handleAttempt = async () => {
     if (!token) return;
-    const res = await attemptAction({ def: actionDef, values: fieldValues, token }).unwrap();
-    setResult(res);
+    setAttemptError(null);
+    try {
+      const res = await attemptAction({ def: actionDef, values: fieldValues, token }).unwrap();
+      setResult(res);
+    } catch {
+      setResult(null);
+      setAttemptError("Couldn't reach the server. Check that the backend is running and try again.");
+    }
   };
 
-  const canAttempt = Boolean(token) && actionDef.fields.every((f) => fieldValues[f.name]?.trim());
+  const missingFields = actionDef.fields.filter((f) => !fieldValues[f.name]?.trim());
+  const canAttempt = Boolean(token) && missingFields.length === 0;
 
   return (
     <div className="panel">
@@ -92,8 +101,15 @@ export function ActionConsole() {
       <div className="field-row">
         {actionDef.fields.map((field) => (
           <label key={field.name}>
-            {field.label}
+            <span>
+              {field.label}
+              <span className="required-marker" aria-hidden="true">
+                {" "}
+                *
+              </span>
+            </span>
             <input
+              required
               value={fieldValues[field.name] ?? ""}
               placeholder={field.placeholder}
               onChange={(e) =>
@@ -120,6 +136,11 @@ export function ActionConsole() {
       >
         {attemptState.isLoading ? "Attempting…" : `Attempt ${actionDef.label}`}
       </button>
+
+      {missingFields.length > 0 && (
+        <p className="field-hint">Fill in the required fields to continue.</p>
+      )}
+      {attemptError && <p className="attempt-error">{attemptError}</p>}
 
       {result && (
         <div className={`result-ribbon ${result.status < 400 ? "result-allow" : "result-deny"}`}>

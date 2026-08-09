@@ -31,6 +31,9 @@ export const triageApi = createApi({
     >({
       // custom queryFn: a 401/403 here is an expected, displayable outcome,
       // not a failed request, so we don't let RTK Query treat it as an error.
+      // A thrown network error (backend unreachable, DNS failure, etc.) is a
+      // real failure, though — queryFn must never throw, so it's converted
+      // into an explicit { error } result instead of an unhandled rejection.
       async queryFn({ def, values, token }) {
         const query = def.queryParams
           .map((name) => `${encodeURIComponent(name)}=${encodeURIComponent(values[name] ?? "")}`)
@@ -38,12 +41,21 @@ export const triageApi = createApi({
         const path = def.buildPath(values);
         const url = `${API_BASE_URL}${path}${query ? `?${query}` : ""}`;
 
-        const response = await fetch(url, {
-          method: def.method,
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body = await response.json().catch(() => ({}));
-        return { data: { status: response.status, body } };
+        try {
+          const response = await fetch(url, {
+            method: def.method,
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const body = await response.json().catch(() => ({}));
+          return { data: { status: response.status, body } };
+        } catch (err) {
+          return {
+            error: {
+              status: "FETCH_ERROR",
+              error: err instanceof Error ? err.message : String(err),
+            },
+          };
+        }
       },
       invalidatesTags: ["Audit"],
     }),
