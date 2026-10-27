@@ -12,6 +12,10 @@
   --approve-soft: #E4F2E9;
   --deny: #B23A34;
   --deny-soft: #FBE7E5;
+  --limit: #9A6A12;
+  --limit-soft: #FBF1DC;
+  --unavail: #5B6478;
+  --unavail-soft: #E9ECF2;
   --navy: #1C2541;
   --shadow: 0 12px 28px -18px rgba(23, 27, 43, 0.35);
 
@@ -35,6 +39,10 @@
     --approve-soft: #17301F;
     --deny: #E4726A;
     --deny-soft: #33191A;
+    --limit: #E3B04B;
+    --limit-soft: #33280F;
+    --unavail: #9AA3B8;
+    --unavail-soft: #1E2330;
     --shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.6);
   }
 }
@@ -200,6 +208,8 @@ select:focus, input:focus, button:focus-visible {
 }
 .result-allow { background: var(--approve-soft); border-left-color: var(--approve); }
 .result-deny { background: var(--deny-soft); border-left-color: var(--deny); }
+.result-limited { background: var(--limit-soft); border-left-color: var(--limit); }
+.result-unavailable { background: var(--unavail-soft); border-left-color: var(--unavail); }
 .ribbon-tag {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -211,6 +221,9 @@ select:focus, input:focus, button:focus-visible {
 }
 .result-allow .ribbon-tag { background: var(--approve); }
 .result-deny .ribbon-tag { background: var(--deny); }
+.result-limited .ribbon-tag { background: var(--limit); color: #1b1304; }
+.result-unavailable .ribbon-tag { background: var(--unavail); }
+.result-note { flex-basis: 100%; margin: 0; font-size: 0.82rem; color: var(--text); }
 .result-status {
   font-family: var(--font-mono);
   font-size: 0.85rem;

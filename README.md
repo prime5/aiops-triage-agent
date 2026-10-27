@@ -95,15 +95,64 @@ Then open `http://localhost:5173`, or skip straight to the narrated demo:
 ./demo.sh
 ```
 
+## Optional: run it behind flowgate
+
+The API can sit behind [flowgate](https://github.com/prime5/flowgate), a Go
+gateway with a token-bucket rate limiter, a circuit breaker and load
+shedding, so the access layer here and the protection layer there compose
+into one path: `console -> flowgate -> FastAPI`. This is opt-in; everything
+above works without it.
+
+```bash
+# 1. backend, with a signing secret both sides know
+TRIAGE_JWT_SECRET=change-me-32-bytes-minimum-secret .venv/bin/uvicorn app.main:app --port 8000
+
+# 2. flowgate in proxy mode (needs flowgate with UPSTREAM_URL support)
+PORT=8080 UPSTREAM_URL=http://127.0.0.1:8000 \
+  JWT_SECRET=change-me-32-bytes-minimum-secret RL_BURST=20 RL_RATE=5 ./flowgate
+
+# 3. console through the gateway (same-origin dev proxy, see below)
+cd ui && VITE_API_BASE_URL=/api npm run dev
+```
+
+What the gateway adds, and what the console does with it:
+
+- **Per-identity fairness.** With `JWT_SECRET` set, flowgate verifies the
+  HS256 token and rate-limits per `sub`, so `triage-agent-readonly` and
+  `triage-agent-remediator` get separate buckets even from one IP. A token it
+  cannot verify (bad signature, expired, wrong algorithm) is never used as a
+  key; the request falls back to the client address.
+- **Pushback is shown as pushback.** A `429` (rate limited) or `503`
+  (load shed, or breaker open) renders as an amber `RATE LIMITED` or grey
+  `GATEWAY UNAVAILABLE` ribbon, not as `DENIED`, because the policy check
+  never ran. A `Retry-After` header becomes a countdown on the button.
+- **Trace context is forwarded.** flowgate injects a W3C `traceparent` on the
+  upstream request. This service does not emit spans itself yet, so the trace
+  stops at the hand-off.
+
+Caveats, stated plainly:
+
+- This is fairness, not security. `POST /auth/session` mints a token for any
+  known identity with no credential (it is a demo), so anyone can mint tokens
+  and get a bucket per identity. Identity-keyed limiting only becomes a real
+  control once minting itself is authenticated.
+- Requests the gateway rejects never reach the policy layer, so they do not
+  appear in the audit trail. The gateway's own `/metrics` counts them.
+- The console goes through a Vite dev proxy (`/api`) on purpose: flowgate's
+  own `429`/`503` replies carry no CORS headers, so a cross-origin browser
+  could not read their status or `Retry-After`.
+
 ## Test coverage
 
 - **13 pytest cases** ([`tests/`](tests/)) — policy allow/deny matrix, token
   mint/expiry/tamper handling, the overreach denial scenario.
-- **5 Playwright end-to-end specs** ([`ui/e2e/`](ui/e2e/)) — written
+- **8 Playwright end-to-end specs** ([`ui/e2e/`](ui/e2e/)) — written
   test-first against real UX bugs found while using the app: a stranded
   session token on identity reselection, a misleading placeholder that made
   the "Attempt" button look permanently broken, and a network failure that
-  used to fail silently instead of showing an error.
+  used to fail silently instead of showing an error. Three more cover the
+  gateway pushback states (429 with a countdown, 503, 429 without a usable
+  `Retry-After`) with the gateway's responses stubbed at the network layer.
 
 ```bash
 .venv/bin/python -m pytest tests/ -v      # backend

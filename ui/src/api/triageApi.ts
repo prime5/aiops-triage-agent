@@ -1,7 +1,17 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { ActionDef } from "./actions";
-import type { AttemptResult, AuditRecord, RolesMap, SessionTokenResponse } from "./types";
+import {
+  parseRetryAfter,
+  type AttemptResult,
+  type AuditRecord,
+  type RolesMap,
+  type SessionTokenResponse,
+} from "./types";
 
+// Direct to the FastAPI service by default. To go through the flowgate
+// gateway instead, set VITE_API_BASE_URL=/api and run the dev server: see
+// vite.config.ts (a same-origin proxy, so the gateway's own 429/503 replies,
+// which carry no CORS headers, stay readable by the browser) and the README.
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export const triageApi = createApi({
@@ -47,7 +57,16 @@ export const triageApi = createApi({
             headers: { Authorization: `Bearer ${token}` },
           });
           const body = await response.json().catch(() => ({}));
-          return { data: { status: response.status, body } };
+          // 429 (rate limited) and 503 (shed / breaker open) come from the
+          // flowgate gateway when it fronts the API. They are data, not
+          // errors, and carry a Retry-After the console turns into a countdown.
+          return {
+            data: {
+              status: response.status,
+              body,
+              retryAfterSeconds: parseRetryAfter(response.headers.get("Retry-After")),
+            },
+          };
         } catch (err) {
           return {
             error: {

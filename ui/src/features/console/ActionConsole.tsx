@@ -2,8 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../app/hooks";
 import { ACTION_DEFS } from "../../api/actions";
 import { useAttemptActionMutation, useGetRolesQuery, useMintSessionMutation } from "../../api/triageApi";
-import type { AttemptResult } from "../../api/types";
+import { classifyStatus, type AttemptResult, type ResultKind } from "../../api/types";
 import { identityChanged, tokenMinted } from "../session/sessionSlice";
+
+const RIBBON: Record<ResultKind, { className: string; tag: string }> = {
+  allowed: { className: "result-allow", tag: "ALLOWED" },
+  denied: { className: "result-deny", tag: "DENIED" },
+  rate_limited: { className: "result-limited", tag: "RATE LIMITED" },
+  unavailable: { className: "result-unavailable", tag: "GATEWAY UNAVAILABLE" },
+};
 
 export function ActionConsole() {
   const dispatch = useAppDispatch();
@@ -16,6 +23,8 @@ export function ActionConsole() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [attemptError, setAttemptError] = useState<string | null>(null);
+  // seconds left before the gateway will accept another attempt (from Retry-After)
+  const [cooldown, setCooldown] = useState(0);
 
   const identities = useMemo(() => Object.keys(roles ?? {}), [roles]);
   const actionDef = useMemo(
@@ -36,6 +45,12 @@ export function ActionConsole() {
   }, [identity]);
 
   useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  useEffect(() => {
     setFieldValues({});
     setResult(null);
     setAttemptError(null);
@@ -44,9 +59,11 @@ export function ActionConsole() {
   const handleAttempt = async () => {
     if (!token) return;
     setAttemptError(null);
+    setCooldown(0);
     try {
       const res = await attemptAction({ def: actionDef, values: fieldValues, token }).unwrap();
       setResult(res);
+      setCooldown(res.retryAfterSeconds ?? 0);
     } catch {
       setResult(null);
       setAttemptError("Couldn't reach the server. Check that the backend is running and try again.");
@@ -54,7 +71,8 @@ export function ActionConsole() {
   };
 
   const missingFields = actionDef.fields.filter((f) => !fieldValues[f.name]?.trim());
-  const canAttempt = Boolean(token) && missingFields.length === 0;
+  const canAttempt = Boolean(token) && missingFields.length === 0 && cooldown === 0;
+  const kind = result ? classifyStatus(result.status) : null;
 
   return (
     <div className="panel">
@@ -134,7 +152,11 @@ export function ActionConsole() {
         onClick={handleAttempt}
         disabled={!canAttempt || attemptState.isLoading}
       >
-        {attemptState.isLoading ? "Attempting…" : `Attempt ${actionDef.label}`}
+        {attemptState.isLoading
+          ? "Attempting…"
+          : cooldown > 0
+            ? `Retry in ${cooldown}s`
+            : `Attempt ${actionDef.label}`}
       </button>
 
       {missingFields.length > 0 && (
@@ -142,10 +164,26 @@ export function ActionConsole() {
       )}
       {attemptError && <p className="attempt-error">{attemptError}</p>}
 
-      {result && (
-        <div className={`result-ribbon ${result.status < 400 ? "result-allow" : "result-deny"}`}>
-          <span className="ribbon-tag">{result.status < 400 ? "ALLOWED" : "DENIED"}</span>
+      {result && kind && (
+        <div className={`result-ribbon ${RIBBON[kind].className}`}>
+          <span className="ribbon-tag">{RIBBON[kind].tag}</span>
           <span className="result-status">{result.status}</span>
+          {kind === "rate_limited" && (
+            <p className="result-note">
+              The gateway is limiting this identity, not the policy layer: the permission check
+              never ran.
+              {result.retryAfterSeconds !== undefined &&
+                ` Retry-After: ${result.retryAfterSeconds}s.`}
+            </p>
+          )}
+          {kind === "unavailable" && (
+            <p className="result-note">
+              The gateway shed this request or its circuit breaker is open: the permission check
+              never ran.
+              {result.retryAfterSeconds !== undefined &&
+                ` Retry-After: ${result.retryAfterSeconds}s.`}
+            </p>
+          )}
           <pre className="result-body">{JSON.stringify(result.body, null, 2)}</pre>
         </div>
       )}
